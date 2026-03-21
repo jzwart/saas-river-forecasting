@@ -15,18 +15,22 @@ This repository contains the code and analysis for our research on machine learn
 
 ```
 ├── lr/
-│   └── lr.ipynb                # Logistic Regression model
+│   └── lr.ipynb                     # Logistic Regression: training, evaluation, inference
 ├── xgb/
-│   └── xgb.ipynb               # XGBoost model
+│   └── xgb.ipynb                    # XGBoost: training, evaluation, inference
 ├── lstm/
-│   ├── lstm_all_sites.ipynb    # LSTM on combined HOBO + discretized discharge data
-│   └── lstm_hobo_sites.ipynb   # LSTM on HOBO sensor sites only
+│   ├── lstm_hobo_sites.ipynb        # LSTM on HOBO sensor sites only (discrete observations)
+│   ├── lstm_all_sites.ipynb         # LSTM on HOBO + discretized discharge (mixed data)
+│   └── lstm_all_sites_results.md    # Mixed-data LSTM results (distributional mismatch finding)
 ├── rgcn/
-│   ├── train_gnn.ipynb         # Graph Neural Network model
-│   ├── build_graph.ipynb       # Stream network graph construction
-│   └── rgcn_config.yaml        # RGCN model configuration
+│   ├── build_graph.ipynb            # Stream network graph construction
+│   ├── train_gnn.ipynb              # RGCN model training
+│   ├── rgcn_eval.ipynb              # RGCN evaluation: metrics, stream order, perennial status
+│   ├── rgcn_eval_results.md         # RGCN evaluation results summary
+│   └── rgcn_config.yaml             # RGCN model configuration
 ├── synthetic_data/
-│   └── gam.ipynb               # GAM-based synthetic data generation
+│   └── gam.ipynb                    # GAM-based synthetic data generation
+├── classical_lstm_hobo_results.md   # LR, XGBoost, LSTM (HOBO-only) results summary
 └── README.md
 ```
 
@@ -110,16 +114,15 @@ torch-geometric
 
 ## Usage
 
-The Logistic Regression, XGBoost, and LSTM notebooks are self-contained and follow a consistent structure:
+All notebooks follow a consistent structure and use standardized variable naming:
 
-1. **Imports** - Required libraries
-2. **Data Preprocessing** - Loading and merging datasets
-3. **Experiments** - Train-test splitting strategies and hyperparameter selection
-4. **Model Training** - With class imbalance handling
-5. **Evaluation** - Metrics and confusion matrices
-6. **Inference** - Function for predicting wet/dry status at new site-date combinations
+1. **Imports**
+2. **Data Preprocessing** — Loading, merging, and creating the `central_df` dataframe with standardized column names (`wetdry_status` for the current observation, `wet_dry_next` for the prediction target)
+3. **Model Training** — With ADASYN class imbalance handling
+4. **Evaluation** — Metrics, classification reports, confusion matrices, and feature importance
+5. **Inference** — Function for predicting wet/dry status at new site-date combinations
 
-Example inference:
+Example inference (LR/XGBoost):
 ```python
 predict_site_date(
     model=model,
@@ -127,7 +130,7 @@ predict_site_date(
     site_id="HoboSite100",
     date="2020-10-22"
 )
-# Output: "Site HoboSite100 forecast for 2020-10-29: WET, (P(wet)=0.8234)"
+# Output: "Site HoboSite100 on 2020-10-25 (predicted from 2020-10-22): DRY, (P(wet)=0.0000)"
 ```
 
 ## Citation
