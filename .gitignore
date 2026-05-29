@@ -1,2 +1,4 @@
 CLAUDE.md
 data/
+.venv/
+__pycache__/
