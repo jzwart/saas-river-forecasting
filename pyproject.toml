@@ -1,0 +1,20 @@
+[project]
+name = "saas-river-forecasting"
+version = "0.1.0"
+description = "Evaluating data-driven models for multimodal prediction of headwater streamflow"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "huggingface-hub>=1.17.0",
+    "imbalanced-learn>=0.14.1",
+    "matplotlib>=3.10.9",
+    "numpy>=2.4.6",
+    "optuna>=4.8.0",
+    "pandas>=3.0.3",
+    "scikit-learn>=1.8.0",
+    "scipy>=1.17.1",
+    "seaborn>=0.13.2",
+    "torch>=2.12.0",
+    "torch-geometric>=2.7.0",
+    "xgboost>=3.2.0",
+]
