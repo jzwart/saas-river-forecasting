@@ -44,8 +44,8 @@ training:
   # Number of training epochs
   epochs: 100
   
-  # Batch size (should be divisible by n_segments for proper adjacency alignment)
-  batch_size: 1586
+  # Batch size = number of temporal windows per batch
+  batch_size: 128
   
   # Sequence length (number of timesteps per sample)
   seq_length: 28
