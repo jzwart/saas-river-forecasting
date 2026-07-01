@@ -18,3 +18,14 @@ dependencies = [
     "torch-geometric>=2.7.0",
     "xgboost>=3.2.0",
 ]
+
+# Default PyPI torch wheels are built for CUDA 13 (+cu130) and won't run on this
+# cluster's CUDA 12.4 driver (550.107.02). Pin torch to the CUDA 12.6 build, which
+# runs on the 12.4 driver via CUDA minor-version compatibility.
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu126" }
