@@ -2,3 +2,7 @@ CLAUDE.md
 data/
 .venv/
 __pycache__/
+
+# Baseline archive: keep the manifest in git; binary snapshots live on HF/ScienceBase
+results/as_released_2026-06/*
+!results/as_released_2026-06/MANIFEST.md
