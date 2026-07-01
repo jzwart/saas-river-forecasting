@@ -80,11 +80,31 @@ def main() -> int:
 
     W = state_dict["weight_ih"]  # (num_features, 4 * hidden_dim)
     n_features = W.shape[0]
-    if n_features != len(FEATURE_NAMES):
-        print(
-            f"WARNING: checkpoint has {n_features} input features but this script "
-            f"expects {len(FEATURE_NAMES)}. Feature labels may be misaligned.\n"
-        )
+
+    # Prefer feature names stored in the checkpoint (retrain checkpoints record the
+    # full 37-feature layout: drivers, lags, MaxDepth, month/day, then statics).
+    # Fall back to the hardcoded 20-feature released layout.
+    feature_names = ckpt.get("feature_vars") if isinstance(ckpt, dict) else None
+    if not feature_names:
+        feature_names = FEATURE_NAMES
+        if n_features != len(FEATURE_NAMES):
+            print(
+                f"WARNING: checkpoint has {n_features} input features but this script "
+                f"expects {len(FEATURE_NAMES)} and stores no feature_vars. "
+                f"Feature labels may be misaligned.\n"
+            )
+
+    # Drivers are always the first 11 rows; "active" reference = the known-used
+    # obs lags + month/day, located by name when available.
+    driver_idx = list(range(0, min(11, n_features)))
+    if feature_names is FEATURE_NAMES:
+        active_idx = ACTIVE_IDX
+    else:
+        known_active = {
+            "Discharge_CMS_lag_1", "Discharge_CMS_lag_7",
+            "HoboWetDry0.05_lag_1", "HoboWetDry0.05_lag_7", "month", "day",
+        }
+        active_idx = [i for i, n in enumerate(feature_names) if n in known_active]
 
     print("=" * 74)
     print(f"RGCN input-weight inspection  ({args.checkpoint})")
@@ -98,16 +118,16 @@ def main() -> int:
     print("-" * 74)
 
     for i in range(n_features):
-        name = FEATURE_NAMES[i] if i < len(FEATURE_NAMES) else f"feature_{i}"
+        name = feature_names[i] if i < len(feature_names) else f"feature_{i}"
         row = W[i]
         amax = row.abs().max().item()
         amean = row.abs().mean().item()
         status = "UNUSED (~0)" if amax < args.threshold else "active"
-        marker = "  <== driver" if i in DRIVER_IDX else ""
+        marker = "  <== driver" if i in driver_idx else ""
         print(f"{i:3d}  {name:22s} {amax:12.3e} {amean:12.3e}   {status}{marker}")
 
-    driver_max = W[DRIVER_IDX].abs().max().item()
-    active_max = W[ACTIVE_IDX].abs().max().item()
+    driver_max = W[driver_idx].abs().max().item()
+    active_max = W[active_idx].abs().max().item()
     ratio = active_max / driver_max if driver_max > 0 else float("inf")
 
     print("=" * 74)
