@@ -161,9 +161,10 @@ def main() -> int:
         if meta is None:
             print(f"  [warn] {name} not found in ScienceBase item {SCIENCEBASE_ITEM_ID}; skipping")
             continue
-        # Files with published=false are request-gated S3 downloads (typically very large).
-        # The downloadUri returns an HTML manager page, not the file. Bail with instructions.
-        if meta.get("published") is False or meta.get("pathOnDisk") == "__s3__":
+        # Only __s3__-backed files are request-gated (CAPTCHA + async bundling); their
+        # downloadUri returns an HTML page, not the file. Disk-backed files (__disk__...)
+        # are directly downloadable via downloadUri even when published=false.
+        if meta.get("pathOnDisk") == "__s3__":
             request_url = meta.get(
                 "s3DownloadRequestPageUri",
                 f"https://www.sciencebase.gov/catalog/item/{SCIENCEBASE_ITEM_ID}",
