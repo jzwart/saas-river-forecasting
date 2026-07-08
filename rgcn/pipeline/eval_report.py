@@ -74,7 +74,7 @@ def main() -> int:
     val["All Horizons"] = pd.concat(val.values(), ignore_index=True)
 
     lines = ["# RGCN retrain — evaluation report", ""]
-    lines.append(f"Checkpoint: `data/retrain/best_model_retrain.pt` | "
+    lines.append(f"Checkpoint: `{config['paths']['checkpoint']}` | "
                  f"split: `{config.path('split_map').name}`")
     lines.append("")
 
@@ -133,9 +133,9 @@ def main() -> int:
                      f"{m['RMSE']:.4f} | {m['MAPE']:.1f} |")
     lines.append("")
 
-    out_dir = config.repo_root / "results"  # committable (not under gitignored data/)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    out = out_dir / "rgcn_eval_retrain.md"
+    # Committable (not under gitignored data/); per-variant via paths.eval_report.
+    out = config.repo_root / config["paths"].get("eval_report", "results/rgcn_eval_retrain.md")
+    out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text("\n".join(lines))
     print("\n".join(lines))
     print(f"\nWrote {out}")

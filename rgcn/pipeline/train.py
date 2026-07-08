@@ -44,12 +44,18 @@ def get_device() -> torch.device:
 
 def run_epoch(model, windows, batch_ids, X_time, X_static, y_all, spec, cfg_tr,
               optimizer=None):
-    """One pass over the given window ids. optimizer=None => eval (no grad)."""
+    """One pass over the given window ids. optimizer=None => eval (no grad).
+
+    Windows are stacked into a single batched forward (B, N, wl, 37); the loss
+    is still computed per window then averaged, so gradients match the old
+    per-window loop exactly."""
     train_mode = optimizer is not None
     model.train(train_mode)
     horizon = spec.forecast_horizon
     N = X_static.shape[0]
-    static_b = X_static.unsqueeze(0)  # (1, N, 17)
+    wl = spec.window_len
+    device = X_time.device
+    arange_wl = torch.arange(wl, device=device)
     total, nb = 0.0, 0
 
     ctx = torch.enable_grad() if train_mode else torch.no_grad()
@@ -58,21 +64,22 @@ def run_epoch(model, windows, batch_ids, X_time, X_static, y_all, spec, cfg_tr,
             chunk = batch_ids[i:i + cfg_tr["batch_size"]]
             if train_mode:
                 optimizer.zero_grad()
-            losses = []
-            for wid in chunk:
-                start, end = windows[wid]
-                xt = X_time[start:end]                       # (wl, N, 20)
-                xs = static_b.expand(xt.shape[0], N, X_static.shape[1])
-                X = torch.cat([xt, xs], dim=-1)              # (wl, N, 37)
-                X = X.permute(1, 0, 2)                       # (N, wl, 37)
-                pred = model(X)                              # (N, wl, 2)
-                y = y_all[start:end].permute(1, 0, 2)        # (N, wl, 2)
-                loss = multitask_weighted_loss(
-                    pred[:, -horizon:, :], y[:, -horizon:, :],
+            B = len(chunk)
+            starts = torch.tensor([windows[w][0] for w in chunk], device=device)
+            t_idx = starts[:, None] + arange_wl[None, :]     # (B, wl)
+            xt = X_time[t_idx]                               # (B, wl, N, 20)
+            xs = X_static[None, None].expand(B, wl, N, X_static.shape[1])
+            X = torch.cat([xt, xs], dim=-1).permute(0, 2, 1, 3)  # (B, N, wl, 37)
+            pred = model(X)                                  # (B, N, wl, 2)
+            y = y_all[t_idx].permute(0, 2, 1, 3)             # (B, N, wl, 2)
+            losses = [
+                multitask_weighted_loss(
+                    pred[b, :, -horizon:, :], y[b, :, -horizon:, :],
                     cfg_tr["lambda_discharge"], cfg_tr["lambda_wetdry"],
                     cfg_tr["false_positive_weight"],
                 )
-                losses.append(loss)
+                for b in range(B)
+            ]
             batch_loss = torch.stack(losses).mean()
             if train_mode:
                 batch_loss.backward()
@@ -119,10 +126,13 @@ def main() -> int:
     split = load_split_indices(config.path("split_map"))
     train_ids, val_ids = split["train"], split["val"]
 
+    ckpt_path = config.path("checkpoint")
     if args.smoke:
         train_ids = train_ids[-400:]  # recent windows (carry wet/dry + discharge)
         val_ids = val_ids[:len(val_ids)]
         args.epochs = args.epochs or 2
+        # Never clobber a real checkpoint with a smoke-test model.
+        ckpt_path = ckpt_path.with_name(ckpt_path.stem + "_smoke.pt")
 
     epochs = args.epochs or int(config["training"]["epochs"])
     patience = int(config["training"]["early_stopping_patience"])
@@ -139,7 +149,6 @@ def main() -> int:
     rng = np.random.default_rng(seed)
     best_val, best_epoch, no_improve = float("inf"), -1, 0
     history = {"train_loss": [], "val_loss": []}
-    ckpt_path = config.path("checkpoint")
     ckpt_path.parent.mkdir(parents=True, exist_ok=True)
 
     for epoch in range(epochs):

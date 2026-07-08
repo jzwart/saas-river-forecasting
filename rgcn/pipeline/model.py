@@ -4,8 +4,12 @@ Shared spatiotemporal LSTM core with a graph-convolution term on the cell state
 (c_t = f_t*(c_t + A @ q_t) + i_t*g_t) and two task heads: wet/dry classification
 (sigmoid) and log-discharge regression.
 
-Input to forward(): (num_nodes, seq_len, input_dim) — nodes are the batch dim.
-Output: (num_nodes, seq_len, 2) with column 0 = P(wet), column 1 = log-discharge.
+Input to forward(): (num_nodes, seq_len, input_dim) — nodes are the batch dim —
+or (batch, num_nodes, seq_len, input_dim) to run several windows in one pass
+(the graph convolution broadcasts A over the leading window dim; the math per
+window is identical to the 3-D path).
+Output: (num_nodes, seq_len, 2) / (batch, num_nodes, seq_len, 2) with
+column 0 = P(wet), column 1 = log-discharge.
 """
 
 from __future__ import annotations
@@ -85,12 +89,18 @@ class RGCN_v2(nn.Module):
         self, x: torch.Tensor,
         init_states: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
     ) -> torch.Tensor:
-        bs, seq_sz, _ = x.size()
+        single = x.dim() == 3  # (N, seq, F) -> window batch of 1
+        if single:
+            x = x.unsqueeze(0)
+            if init_states is not None:
+                init_states = (init_states[0].unsqueeze(0), init_states[1].unsqueeze(0))
+
+        B, N, seq_sz, _ = x.size()
         hidden_seq = []
 
         if init_states is None:
-            h_t = torch.zeros(bs, self.hidden_size, device=x.device)
-            c_t = torch.zeros(bs, self.hidden_size, device=x.device)
+            h_t = torch.zeros(B, N, self.hidden_size, device=x.device)
+            c_t = torch.zeros(B, N, self.hidden_size, device=x.device)
         else:
             h_t, c_t = init_states
 
@@ -98,23 +108,27 @@ class RGCN_v2(nn.Module):
         HS = self.hidden_size
 
         for t in range(seq_sz):
-            x_t = x[:, t, :]
+            x_t = x[:, :, t, :]
             gates = x_t @ self.weight_ih + h_t @ self.weight_hh + self.bias
-            i_t = torch.sigmoid(gates[:, :HS])
-            f_t = torch.sigmoid(gates[:, HS:HS * 2])
-            g_t = torch.tanh(gates[:, HS * 2:HS * 3])
-            o_t = torch.sigmoid(gates[:, HS * 3:])
+            i_t = torch.sigmoid(gates[..., :HS])
+            f_t = torch.sigmoid(gates[..., HS:HS * 2])
+            g_t = torch.tanh(gates[..., HS * 2:HS * 3])
+            o_t = torch.sigmoid(gates[..., HS * 3:])
 
             q_t = torch.tanh(h_t @ self.weight_q + self.bias_q)
-            c_t = f_t * (c_t + self.A @ q_t) + i_t * self.recur_dropout(g_t)
+            # (N, N) @ (B, N, HS) broadcasts the graph conv over the window dim.
+            c_t = f_t * (c_t + torch.matmul(self.A, q_t)) + i_t * self.recur_dropout(g_t)
             h_t = o_t * torch.tanh(c_t)
-            hidden_seq.append(h_t.unsqueeze(1))
+            hidden_seq.append(h_t.unsqueeze(2))
 
-        hidden_seq = torch.cat(hidden_seq, dim=1)
+        hidden_seq = torch.cat(hidden_seq, dim=2)
         reg_out = self.reg_head(hidden_seq)
         cls_prob = torch.sigmoid(self.cls_head(hidden_seq))
-        out = torch.cat([cls_prob, reg_out], dim=2)
+        out = torch.cat([cls_prob, reg_out], dim=3)
 
+        if single:
+            out = out.squeeze(0)
+            h_t, c_t = h_t.squeeze(0), c_t.squeeze(0)
         if self.return_states:
             return out, (h_t, c_t)
         return out

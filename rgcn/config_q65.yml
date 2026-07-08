@@ -1,0 +1,58 @@
+# =============================================================================
+# RGCN retrain — split variant "q65": lower quantile cutoff (more val labels)
+# =============================================================================
+# Same as config.yml but the temporal cutoff sits at the 0.65 quantile of the
+# wet/dry label dates (2020-09-10) instead of 0.80 (2020-09-28), moving ~35% of
+# the real labels into val (vs ~20%). Everything split-derived gets its own
+# filename (normalization stats depend on the train mask).
+# Run any pipeline stage against this file with RGCN_CONFIG=rgcn/config_q65.yml
+
+paths:
+  # Inputs (shared, read-only)
+  obs_csv: "data/sciencebase/obs.csv"
+  met_drivers_csv: "data/sciencebase/met_drivers.csv"
+  static_vars_csv: "data/sciencebase/static_vars.csv"
+  released_graph: "data/huggingface/hja_graph.gpickle"
+
+  # Shared split-independent intermediates
+  drivers_parquet: "data/retrain/met_drivers.parquet"
+  graph_out: "data/retrain/hja_graph_drivers.gpickle"
+
+  # Split-specific outputs (q65 variant)
+  split_map: "data/retrain/window_split_map_temporal65.csv"
+  split_meta: "data/retrain/split_meta_q65.json"
+  scaler_json: "data/retrain/feature_scaler_q65.json"
+  feature_arrays: "data/retrain/feature_arrays_q65.npz"
+  checkpoint: "data/retrain/best_model_retrain_q65.pt"
+  predictions_dir: "data/retrain/predictions_q65"
+  eval_report: "results/rgcn_eval_retrain_q65.md"
+
+windows:
+  date_start: "1980-01-01"
+  date_end: "2020-12-31"
+  seq_length: 28
+  forecast_horizon: 3
+  stride: 3
+
+split:
+  method: quantile_cutoff
+  wetdry_quantile: 0.65
+
+model:
+  version: "v2"
+  hidden_dim: 64
+  dropout: 0.1
+  recur_dropout: 0.0
+  return_states: false
+
+training:
+  epochs: 100
+  batch_size: 128
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  grad_clip: 1.0
+  early_stopping_patience: 20
+  lambda_discharge: 1.0
+  lambda_wetdry: 0.5
+  false_positive_weight: 2.0
+  seed: 42

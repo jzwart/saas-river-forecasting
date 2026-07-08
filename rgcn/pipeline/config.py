@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -34,7 +35,14 @@ class Config:
 
 
 def load_config(path: str | Path | None = None) -> Config:
-    path = Path(path) if path else DEFAULT_CONFIG
+    """Load a config file. Resolution order: explicit ``path`` argument, the
+    RGCN_CONFIG env var (lets every pipeline module run against a split/ablation
+    variant without signature changes), then rgcn/config.yml."""
+    if path is None:
+        path = os.environ.get("RGCN_CONFIG") or DEFAULT_CONFIG
+    path = Path(path)
+    if not path.is_absolute():
+        path = REPO_ROOT / path
     with open(path) as fh:
         raw = yaml.safe_load(fh)
     return Config(raw)

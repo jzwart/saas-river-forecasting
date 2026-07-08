@@ -1,0 +1,68 @@
+# =============================================================================
+# RGCN retrain — split variant "phases": multi-phase blocked holdout
+# =============================================================================
+# All real wet/dry labels live in ONE season (2020-06-16 .. 2020-10-29), so
+# year-level leave-one-year-out is impossible. Instead, val = three 12-day
+# blocks sampling distinct hydrologic phases of the 2020 season:
+#   Jul 18-29  drying limb   (wet-fraction ~0.89)
+#   Sep 10-21  peak dry      (wet-fraction ~0.78)
+#   Oct 10-21  rewetting     (wet-fraction ~0.84)
+# Block starts are aligned to the window day-3 grid (1980-01-31 + 3k days) so
+# each 12-day block is tiled exactly by 4 windows' forecast days.
+# Windows whose forecast days land within guard_days (=7, the max lag feature)
+# of a block are buffered out of train to limit autocorrelation leakage.
+# Run any pipeline stage against this file with RGCN_CONFIG=rgcn/config_phases.yml
+
+paths:
+  # Inputs (shared, read-only)
+  obs_csv: "data/sciencebase/obs.csv"
+  met_drivers_csv: "data/sciencebase/met_drivers.csv"
+  static_vars_csv: "data/sciencebase/static_vars.csv"
+  released_graph: "data/huggingface/hja_graph.gpickle"
+
+  # Shared split-independent intermediates
+  drivers_parquet: "data/retrain/met_drivers.parquet"
+  graph_out: "data/retrain/hja_graph_drivers.gpickle"
+
+  # Split-specific outputs (phases variant)
+  split_map: "data/retrain/window_split_map_phases.csv"
+  split_meta: "data/retrain/split_meta_phases.json"
+  scaler_json: "data/retrain/feature_scaler_phases.json"
+  feature_arrays: "data/retrain/feature_arrays_phases.npz"
+  checkpoint: "data/retrain/best_model_retrain_phases.pt"
+  predictions_dir: "data/retrain/predictions_phases"
+  eval_report: "results/rgcn_eval_retrain_phases.md"
+
+windows:
+  date_start: "1980-01-01"
+  date_end: "2020-12-31"
+  seq_length: 28
+  forecast_horizon: 3
+  stride: 3
+
+split:
+  method: holdout_blocks
+  holdout_blocks:
+    - ["2020-07-18", "2020-07-29"]
+    - ["2020-09-10", "2020-09-21"]
+    - ["2020-10-10", "2020-10-21"]
+  guard_days: 7
+
+model:
+  version: "v2"
+  hidden_dim: 64
+  dropout: 0.1
+  recur_dropout: 0.0
+  return_states: false
+
+training:
+  epochs: 100
+  batch_size: 128
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  grad_clip: 1.0
+  early_stopping_patience: 20
+  lambda_discharge: 1.0
+  lambda_wetdry: 0.5
+  false_positive_weight: 2.0
+  seed: 42

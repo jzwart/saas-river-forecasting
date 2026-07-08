@@ -74,16 +74,38 @@ def get_node_ids(config) -> list[int]:
     return sorted(int(x) for x in load_statics(config)["NHDPlusID"].unique())
 
 
-def read_cutoff(config) -> pd.Timestamp:
-    """Train/val cutoff date from split_meta.json (run make_splits first)."""
+def read_split_meta(config) -> dict:
+    """split_meta.json (run make_splits first)."""
     meta_path = config.path("split_meta")
     if not meta_path.exists():
         raise FileNotFoundError(
             f"{meta_path} not found. Run: uv run python -m rgcn.pipeline.make_splits"
         )
     with open(meta_path) as fh:
-        meta = json.load(fh)
-    return pd.Timestamp(meta["cutoff_date"])
+        return json.load(fh)
+
+
+def train_date_mask(config, date_range: pd.DatetimeIndex) -> tuple[np.ndarray, str]:
+    """Boolean (T,) mask of dates whose data may inform normalization stats,
+    derived from the split rule in split_meta.json.
+
+    - cutoff rule (quantile split): train dates = date <= cutoff.
+    - exclude_blocks rule (holdout-blocks split): train dates = everything
+      outside the guarded holdout blocks.
+    Returns (mask, description) — the description is stored in the scaler json.
+    """
+    meta = read_split_meta(config)
+    rule = meta.get("train_date_rule") or {"type": "cutoff", "cutoff": meta["cutoff_date"]}
+    if rule["type"] == "cutoff":
+        cutoff = pd.Timestamp(rule["cutoff"])
+        return np.asarray(date_range <= cutoff), f"date <= {cutoff.date()}"
+    if rule["type"] == "exclude_blocks":
+        mask = np.ones(len(date_range), dtype=bool)
+        for s, e in rule["blocks_with_guard"]:
+            mask &= ~((date_range >= pd.Timestamp(s)) & (date_range <= pd.Timestamp(e)))
+        desc = "exclude " + ", ".join(f"{s}..{e}" for s, e in rule["blocks_with_guard"])
+        return mask, desc
+    raise ValueError(f"Unknown train_date_rule type: {rule['type']}")
 
 
 # --------------------------------------------------------------------------- #
@@ -129,8 +151,7 @@ def build_arrays(config, impute_dry: bool = True):
     node_ids = get_node_ids(config)
     n_to_idx = {nid: i for i, nid in enumerate(node_ids)}
     T, N = len(date_range), len(node_ids)
-    cutoff = read_cutoff(config)
-    train_mask_t = date_range <= cutoff  # (T,) boolean
+    train_mask_t, train_rule = train_date_mask(config, date_range)  # (T,) boolean
 
     date_to_t = pd.Series(np.arange(T), index=date_range)
 
@@ -237,12 +258,18 @@ def build_arrays(config, impute_dry: bool = True):
         "node_ids": np.array(node_ids, dtype=np.int64),
         "dates": np.array([d.isoformat() for d in date_range]),
         "scaler": scaler,
-        "cutoff": cutoff.isoformat(),
+        "train_rule": train_rule,
     }
 
 
+def _arrays_path(config):
+    if "feature_arrays" in config["paths"]:
+        return config.path("feature_arrays")
+    return config.path("drivers_parquet").parent / "feature_arrays.npz"
+
+
 def save_arrays(config, arrays: dict):
-    npz_path = config.path("drivers_parquet").parent / "feature_arrays.npz"
+    npz_path = _arrays_path(config)
     np.savez_compressed(
         npz_path,
         X_time=arrays["X_time"],
@@ -252,12 +279,13 @@ def save_arrays(config, arrays: dict):
         dates=arrays["dates"],
     )
     with open(config.path("scaler_json"), "w") as fh:
-        json.dump({"cutoff": arrays["cutoff"], "features": arrays["scaler"]}, fh, indent=2)
+        json.dump({"train_dates": arrays["train_rule"], "features": arrays["scaler"]},
+                  fh, indent=2)
     return npz_path
 
 
 def load_arrays(config):
-    npz_path = config.path("drivers_parquet").parent / "feature_arrays.npz"
+    npz_path = _arrays_path(config)
     if not npz_path.exists():
         raise FileNotFoundError(
             f"{npz_path} not found. Run: uv run python -m rgcn.pipeline.prepare_data"

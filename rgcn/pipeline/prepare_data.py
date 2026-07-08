@@ -26,7 +26,7 @@ def main() -> int:
     print(f"  X_time  {X_time.shape}  {X_time.nbytes/1e9:.2f} GB")
     print(f"  X_static {X_static.shape}")
     print(f"  y_all   {y.shape}")
-    print(f"  cutoff: {arrays['cutoff']}")
+    print(f"  train-date rule (normalization): {arrays['train_rule']}")
 
     # Sanity: driver columns must be non-zero (the original bug was all-zero drivers)
     driver_block = X_time[:, :, :11]

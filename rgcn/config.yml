@@ -22,6 +22,7 @@ paths:
   split_map: "data/retrain/window_split_map_temporal80.csv"
   split_meta: "data/retrain/split_meta.json"             # cutoff date + rule (reproducibility)
   scaler_json: "data/retrain/feature_scaler.json"        # train-only normalization stats
+  feature_arrays: "data/retrain/feature_arrays.npz"      # normalized grids (split-specific!)
   checkpoint: "data/retrain/best_model_retrain.pt"
   predictions_dir: "data/retrain/predictions"            # train_val_predictions_day{1,2,3}.csv
 
@@ -41,6 +42,7 @@ windows:
 # keeps its full 1980-2020 history in train.
 # -----------------------------------------------------------------------------
 split:
+  method: quantile_cutoff   # quantile_cutoff | holdout_blocks (see make_splits.py)
   # cutoff = this quantile of wet/dry (HoboWetDry0.05) label dates.
   # train = windows whose day-3 date <= cutoff; val = after.
   wetdry_quantile: 0.80
