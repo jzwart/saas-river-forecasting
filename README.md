@@ -23,16 +23,31 @@ This repository contains the code and analysis for our research on machine learn
 │   ├── lstm_all_sites.ipynb         # LSTM on HOBO + discretized discharge (mixed data)
 │   └── lstm_all_sites_results.md    # Mixed-data LSTM results (distributional mismatch finding)
 ├── rgcn/
-│   ├── build_graph.ipynb            # Stream network graph construction
-│   ├── train_gnn.ipynb              # RGCN model training
+│   ├── pipeline/                    # Reproducible RGCN retrain pipeline — see rgcn/pipeline/README.md
+│   ├── config.yml                   # Retrain config (+ config_q65.yml / config_phases.yml split variants)
+│   ├── inspect_driver_weights.py    # Verify drivers/statics are active in a checkpoint
+│   ├── build_graph.ipynb            # [as-released] Stream network graph construction
+│   ├── train_gnn.ipynb              # [as-released] RGCN model training
 │   ├── rgcn_eval.ipynb              # RGCN evaluation: metrics, stream order, perennial status
-│   ├── rgcn_eval_results.md         # RGCN evaluation results summary
-│   └── rgcn_config.yaml             # RGCN model configuration
+│   ├── rgcn_eval_results.md         # [as-released] RGCN evaluation results summary
+│   └── rgcn_config.yaml             # [as-released] RGCN model configuration
 ├── synthetic_data/
 │   └── gam.ipynb                    # GAM-based synthetic data generation
+├── results/
+│   ├── rgcn_eval_retrain*.md        # Retrained-RGCN metrics (per split variant)
+│   └── as_released_2026-06/         # Manifest of the archived released baseline (tag: results-as-released)
+├── download_data.py                 # Fetch ScienceBase + Hugging Face data into data/
 ├── classical_lstm_hobo_results.md   # LR, XGBoost, LSTM (HOBO-only) results summary
 └── README.md
 ```
+
+> **Retraining the RGCN:** the released RGCN had three defects (unused
+> meteorological drivers, unfed static features, and normalization/split
+> leakage). `rgcn/pipeline/` retrains it with the fixes on honest temporal
+> splits — full reproduction instructions in
+> [`rgcn/pipeline/README.md`](rgcn/pipeline/README.md). The as-released
+> baseline is preserved untouched (git tag `results-as-released`,
+> `results/as_released_2026-06/MANIFEST.md`).
 
 ## Model Weights
 
@@ -93,24 +108,18 @@ Three train-test splitting strategies for Logistic Regression and XGBoost:
 
 ## Requirements
 
-```
-python>=3.8
-pandas
-numpy
-scikit-learn
-xgboost
-torch
-imbalanced-learn
-optuna
-matplotlib
-seaborn
-huggingface_hub
+Dependencies are managed with [uv](https://docs.astral.sh/uv/) and locked in
+`uv.lock` (Python version in `.python-version`). Set up the environment with:
+
+```bash
+uv sync
 ```
 
-For RGCN:
-```
-torch-geometric
-```
+On Linux, torch is pinned to the CUDA 12.6 build (runs on CUDA 12.4+ drivers);
+other platforms get the default PyPI wheels. RGCN training requires a Linux
+CUDA GPU. Fetch data with `uv run python download_data.py` (one 2.13 GB file,
+`met_drivers.csv`, requires a manual browser download — the script prints the
+URL).
 
 ## Usage
 
