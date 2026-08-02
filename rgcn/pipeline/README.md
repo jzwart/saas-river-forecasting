@@ -26,12 +26,20 @@ uv run python download_data.py
 
 This fetches `obs.csv` and `static_vars.csv` from ScienceBase and the released
 artifacts (graph, stream-order table, released model, split map) from Hugging
-Face into `data/`.
+Face into `data/`. Downloaded ScienceBase files are verified against the
+catalog MD5 checksums.
 
-One file needs a manual step: **`met_drivers.csv` (2.13 GB)** is a
-request-gated S3 file on ScienceBase (CAPTCHA + async bundling). The
-downloader prints the request URL; download it in a browser and place it at
-`data/sciencebase/met_drivers.csv`.
+Some files may need a manual browser step (the downloader prints exact
+instructions, destination paths, and expected MD5s for anything it cannot
+fetch):
+
+- **`met_drivers.csv` (2.13 GB)** is a request-gated S3 file on ScienceBase
+  (CAPTCHA + async bundling). Request it via the printed URL and place it at
+  `data/sciencebase/met_drivers.csv`.
+- ScienceBase intermittently disables direct downloads on the (currently
+  unpublished) data-release item — as of Aug 2026 `obs.csv` 404s and must be
+  downloaded from the item page manually. This should resolve once the
+  Zwart et al. (2026) data release is published.
 
 ## 2. Run the pipeline
 
