@@ -39,8 +39,10 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -130,6 +132,17 @@ def _download(url: str, dest: Path, force: bool) -> None:
         raise
 
 
+def _verify_md5(dest: Path, expected: str) -> bool:
+    h = hashlib.md5()
+    with open(dest, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            h.update(chunk)
+    ok = h.hexdigest() == expected
+    status = "ok" if ok else f"MISMATCH (got {h.hexdigest()}, expected {expected})"
+    print(f"  [md5 ] {dest.name}: {status}")
+    return ok
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument(
@@ -151,6 +164,9 @@ def main() -> int:
     def _should_get(group: str | None) -> bool:
         return group is None or group in requested
 
+    failures: list[str] = []
+    item_page = f"https://www.sciencebase.gov/catalog/item/{SCIENCEBASE_ITEM_ID}"
+
     print(f"ScienceBase  -> {SCIENCEBASE_DIR}")
     sb_files = _sciencebase_files()
     for name, group in SCIENCEBASE_FILES:
@@ -158,32 +174,58 @@ def main() -> int:
             print(f"  [omit] {name} (group '{group}' not requested; pass --include {group} or --all)")
             continue
         meta = sb_files.get(name)
+        dest = SCIENCEBASE_DIR / name
         if meta is None:
             print(f"  [warn] {name} not found in ScienceBase item {SCIENCEBASE_ITEM_ID}; skipping")
+            failures.append(name)
             continue
-        # Only __s3__-backed files are request-gated (CAPTCHA + async bundling); their
-        # downloadUri returns an HTML page, not the file. Disk-backed files (__disk__...)
-        # are directly downloadable via downloadUri even when published=false.
+        md5 = (meta.get("checksum") or {}).get("value")
+        if dest.exists() and not args.force:
+            print(f"  [skip] {name} already exists ({_format_bytes(dest.stat().st_size)})")
+            if md5:
+                _verify_md5(dest, md5)
+            continue
+        # __s3__-backed files are request-gated (CAPTCHA + async bundling); their
+        # downloadUri returns an HTML page, not the file. Disk-backed files can be
+        # directly downloadable, but ScienceBase has intermittently disabled direct
+        # GETs on unpublished items — handle a 404 by falling back to manual steps.
         if meta.get("pathOnDisk") == "__s3__":
-            request_url = meta.get(
-                "s3DownloadRequestPageUri",
-                f"https://www.sciencebase.gov/catalog/item/{SCIENCEBASE_ITEM_ID}",
-            )
+            request_url = meta.get("s3DownloadRequestPageUri", item_page)
             size_gb = meta.get("size", 0) / (1024 ** 3)
             print(f"  [manual] {name} ({size_gb:.2f} GB) is a request-gated S3 file.")
             print(f"           Request and download manually from:")
             print(f"             {request_url}")
-            print(f"           Then place the file at: {SCIENCEBASE_DIR / name}")
+            print(f"           Then place the file at: {dest}")
+            failures.append(name)
             continue
-        _download(meta["downloadUri"], SCIENCEBASE_DIR / name, args.force)
+        try:
+            _download(meta["downloadUri"], dest, args.force)
+            if md5 and not _verify_md5(dest, md5):
+                failures.append(name)
+        except urllib.error.HTTPError as e:
+            print(f"  [fail] {name}: HTTP {e.code} from ScienceBase.")
+            print(f"         Download it manually from the item page:")
+            print(f"           {item_page}")
+            print(f"         Then place the file at: {dest}")
+            if md5:
+                print(f"         Expected MD5: {md5}")
+            failures.append(name)
 
     print(f"\nHugging Face -> {HUGGINGFACE_DIR}")
     for name, group in HUGGINGFACE_FILES:
         if not _should_get(group):
             print(f"  [omit] {name} (group '{group}' not requested; pass --include {group} or --all)")
             continue
-        _download(HF_RESOLVE_URL.format(name=name), HUGGINGFACE_DIR / name, args.force)
+        try:
+            _download(HF_RESOLVE_URL.format(name=name), HUGGINGFACE_DIR / name, args.force)
+        except urllib.error.HTTPError as e:
+            print(f"  [fail] {name}: HTTP {e.code} from Hugging Face "
+                  f"({HF_RESOLVE_URL.format(name=name)})")
+            failures.append(name)
 
+    if failures:
+        print(f"\nDone, but {len(failures)} file(s) need attention: {', '.join(failures)}")
+        return 1
     print("\nDone.")
     return 0
 
