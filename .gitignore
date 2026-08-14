@@ -11,3 +11,5 @@ results/as_released_2026-06/*
 # paper (must never be published). Only the retrain plan is tracked.
 context/*
 !context/RGCN_RETRAIN_PLAN.md
+
+docs/
